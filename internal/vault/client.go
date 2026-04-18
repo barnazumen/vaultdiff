@@ -33,6 +33,7 @@ func NewClient(addr, token string) (*Client, error) {
 
 // ReadSecretVersion reads a specific version of a KV v2 secret.
 // mount is the KV mount path (e.g. "secret"), secretPath is the key path.
+// Use version 0 to read the latest version.
 func (c *Client) ReadSecretVersion(mount, secretPath string, version int) (map[string]interface{}, error) {
 	path := fmt.Sprintf("%s/data/%s", mount, secretPath)
 
@@ -55,4 +56,28 @@ func (c *Client) ReadSecretVersion(mount, secretPath string, version int) (map[s
 	}
 
 	return data, nil
+}
+
+// ListSecrets returns the list of keys under the given path in a KV v2 mount.
+func (c *Client) ListSecrets(mount, secretPath string) ([]string, error) {
+	path := fmt.Sprintf("%s/metadata/%s", mount, secretPath)
+
+	secret, err := c.vc.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets at %q: %w", secretPath, err)
+	}
+	if secret == nil || secret.Data == nil {
+		return nil, fmt.Errorf("no secrets found at %q", secretPath)
+	}
+
+	raw, ok := secret.Data["keys"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected keys format at %q", secretPath)
+	}
+
+	keys := make([]string, len(raw))
+	for i, k := range raw {
+		keys[i] = fmt.Sprintf("%v", k)
+	}
+	return keys, nil
 }
