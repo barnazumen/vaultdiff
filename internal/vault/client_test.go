@@ -21,6 +21,14 @@ func mockVaultServer(t *testing.T, version int, data map[string]interface{}) *ht
 	}))
 }
 
+func mockErrorServer(t *testing.T, statusCode int, body string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(body))
+	}))
+}
+
 func TestReadSecretVersion_Success(t *testing.T) {
 	expected := map[string]interface{}{"username": "admin", "password": "s3cr3t"}
 	srv := mockVaultServer(t, 2, expected)
@@ -44,10 +52,7 @@ func TestReadSecretVersion_Success(t *testing.T) {
 }
 
 func TestReadSecretVersion_NotFound(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{}`))
-	}))
+	srv := mockErrorServer(t, http.StatusNotFound, `{}`)
 	defer srv.Close()
 
 	client, err := NewClient(srv.URL, "test-token")
@@ -62,10 +67,7 @@ func TestReadSecretVersion_NotFound(t *testing.T) {
 }
 
 func TestReadSecretVersion_InvalidToken(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"errors":["permission denied"]}`))
-	}))
+	srv := mockErrorServer(t, http.StatusForbidden, `{"errors":["permission denied"]}`)
 	defer srv.Close()
 
 	client, err := NewClient(srv.URL, "bad-token")
