@@ -60,3 +60,21 @@ func TestReadSecretVersion_NotFound(t *testing.T) {
 		t.Fatal("expected error for missing secret, got nil")
 	}
 }
+
+func TestReadSecretVersion_InvalidToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"errors":["permission denied"]}`))
+	}))
+	defer srv.Close()
+
+	client, err := NewClient(srv.URL, "bad-token")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	_, err = client.ReadSecretVersion("secret", "myapp/config", 1)
+	if err == nil {
+		t.Fatal("expected error for forbidden request, got nil")
+	}
+}
