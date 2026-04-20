@@ -1,55 +1,80 @@
+// Package vault provides utilities for interacting with HashiCorp Vault.
 package vault
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // TokenRenewResult holds the result of a token renewal operation.
 type TokenRenewResult struct {
-	ClientToken   string
-	LeaseDuration int
-	Renewable     bool
+	ClientToken   string        `json:"client_token"`
+	LeaseDuration time.Duration `json:"lease_duration"`
+	Renewable     bool          `json:"renewable"`
+	Policies      []string      `json:"policies"`
 }
 
-// RenewToken attempts to renew the given Vault token and returns the updated lease info.
-func (c *Client) RenewToken(token string) (*TokenRenewResult, error) {
+// vaultTokenRenewResponse mirrors the Vault API response for token renewal.
+type vaultTokenRenewResponse struct {
+	Auth struct {
+		ClientToken   string   `json:"client_token"`
+		LeaseDuration int      `json:"lease_duration"`
+		Renewable     bool     `json:"renewable"`
+		Policies      []string `json:"policies"`
+	} `json:"auth"`
+}
+
+// RenewToken attempts to renew the given Vault token, optionally requesting
+// a specific increment (in seconds). If increment is 0, Vault uses the
+// token's default TTL.
+func (c *Client) RenewToken(ctx context.Context, token string, incrementSeconds int) (*TokenRenewResult, error) {
 	url := fmt.Sprintf("%s/v1/auth/token/renew-self", c.Address)
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	payload := map[string]interface{}{}
+	if incrementSeconds > 0 {
+		payload["increment"] = fmt.Sprintf("%ds", incrementSeconds)
+	}
+
+	body, err := jsonMarshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("building renew request: %w", err)
+		return nil, fmt.Errorf("marshal renew payload: %w", err)
+	}
+
+	req, err := newJSONRequest(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("create renew request: %w", err)
 	}
 	req.Header.Set("X-Vault-Token", token)
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("renew request failed: %w", err)
+		return nil, fmt.Errorf("renew token request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("invalid or expired token")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// handled below
+	case http.StatusForbidden, http.StatusUnauthorized:
+		return nil, fmt.Errorf("renew token: invalid or expired token (HTTP %d)", resp.StatusCode)
+	case http.StatusBadRequest:
+		return nil, fmt.Errorf("renew token: token is not renewable (HTTP %d)", resp.StatusCode)
+	default:
+		return nil, fmt.Errorf("renew token: unexpected status %d", resp.StatusCode)
 	}
 
-	var result struct {
-		Auth struct {
-			ClientToken   string `json:"client_token"`
-			LeaseDuration int    `json:"lease_duration"`
-			Renewable     bool   `json:"renewable"`
-		} `json:"auth"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding renew response: %w", err)
+	var vaultResp vaultTokenRenewResponse
+	if err := json.NewDecoder(resp.Body).Decode(&vaultResp); err != nil {
+		return nil, fmt.Errorf("decode renew response: %w", err)
 	}
 
 	return &TokenRenewResult{
-		ClientToken:   result.Auth.ClientToken,
-		LeaseDuration: result.Auth.LeaseDuration,
-		Renewable:     result.Auth.Renewable,
+		ClientToken:   vaultResp.Auth.ClientToken,
+		LeaseDuration: time.Duration(vaultResp.Auth.LeaseDuration) * time.Second,
+		Renewable:     vaultResp.Auth.Renewable,
+		Policies:      vaultResp.Auth.Policies,
 	}, nil
 }
