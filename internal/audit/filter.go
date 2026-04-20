@@ -29,6 +29,12 @@ func Filter(changes []diff.Change, opts FilterOptions) []diff.Change {
 	return result
 }
 
+// FilterByTypes returns only changes whose type is in the provided list.
+// It is a convenience wrapper around Filter for type-only filtering.
+func FilterByTypes(changes []diff.Change, types ...diff.ChangeType) []diff.Change {
+	return Filter(changes, FilterOptions{OnlyTypes: types})
+}
+
 func matchesType(ct diff.ChangeType, allowed []diff.ChangeType) bool {
 	if len(allowed) == 0 {
 		return true
