@@ -12,6 +12,11 @@ type PolicyDiff struct {
 	Unchanged []string
 }
 
+// HasChanges reports whether the diff contains any added or removed lines.
+func (d PolicyDiff) HasChanges() bool {
+	return len(d.Added) > 0 || len(d.Removed) > 0
+}
+
 // DiffPolicies compares two policy strings and returns a PolicyDiff.
 func DiffPolicies(oldPolicy, newPolicy string) PolicyDiff {
 	oldLines := splitLines(oldPolicy)
