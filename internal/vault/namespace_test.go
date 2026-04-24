@@ -69,3 +69,21 @@ func TestListNamespaces_InvalidToken(t *testing.T) {
 		t.Fatal("expected error for invalid token, got nil")
 	}
 }
+
+func TestListNamespaces_EmptyData(t *testing.T) {
+	payload := map[string]interface{}{
+		"data": map[string]interface{}{},
+	}
+
+	srv := mockNamespaceServer(t, "test-token", http.StatusOK, payload)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-token")
+	ns, err := client.ListNamespaces("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ns) != 0 {
+		t.Errorf("expected 0 namespaces, got %d", len(ns))
+	}
+}
